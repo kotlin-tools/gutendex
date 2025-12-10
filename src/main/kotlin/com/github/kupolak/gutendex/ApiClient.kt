@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -14,6 +15,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 private const val DEFAULT_TIMEOUT_SECONDS: Long = 30L
+private const val MAX_IDLE_CONNECTIONS = 5
+private const val KEEP_ALIVE_DURATION_MINUTES: Long = 5L
 
 /**
  * Low-level HTTP client for the Gutendex API.
@@ -39,6 +42,7 @@ class ApiClient(
             .connectTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(MAX_IDLE_CONNECTIONS, KEEP_ALIVE_DURATION_MINUTES, TimeUnit.MINUTES))
             .apply {
                 if (enableLogging) {
                     val logging =
@@ -75,16 +79,7 @@ class ApiClient(
                         val books = json.decodeFromString<BookListResponse>(body)
                         Result.success(books)
                     } else {
-                        var error: ErrorResponse
-                        var parseException: SerializationException?
-                        try {
-                            error = json.decodeFromString<ErrorResponse>(body)
-                            parseException = null
-                        } catch (e: SerializationException) {
-                            error = ErrorResponse("HTTP ${response.code}: ${response.message}")
-                            parseException = e
-                        }
-                        Result.failure(GutendexException(error.detail, response.code, parseException))
+                        Result.failure(parseErrorResponse(body, response.code, response.message))
                     }
                 }
             } catch (e: IOException) {
@@ -120,16 +115,7 @@ class ApiClient(
                         val book = json.decodeFromString<Book>(body)
                         Result.success(book)
                     } else {
-                        var error: ErrorResponse
-                        var parseException: SerializationException?
-                        try {
-                            error = json.decodeFromString<ErrorResponse>(body)
-                            parseException = null
-                        } catch (e: SerializationException) {
-                            error = ErrorResponse("HTTP ${response.code}: ${response.message}")
-                            parseException = e
-                        }
-                        Result.failure(GutendexException(error.detail, response.code, parseException))
+                        Result.failure(parseErrorResponse(body, response.code, response.message))
                     }
                 }
             } catch (e: IOException) {
@@ -167,16 +153,7 @@ class ApiClient(
                         val books = json.decodeFromString<BookListResponse>(body)
                         Result.success(books)
                     } else {
-                        var error: ErrorResponse
-                        var parseException: SerializationException?
-                        try {
-                            error = json.decodeFromString<ErrorResponse>(body)
-                            parseException = null
-                        } catch (e: SerializationException) {
-                            error = ErrorResponse("HTTP ${response.code}: ${response.message}")
-                            parseException = e
-                        }
-                        Result.failure(GutendexException(error.detail, response.code, parseException))
+                        Result.failure(parseErrorResponse(body, response.code, response.message))
                     }
                 }
             } catch (e: IOException) {
@@ -196,6 +173,31 @@ class ApiClient(
     fun close() {
         httpClient.dispatcher.executorService.shutdown()
         httpClient.connectionPool.evictAll()
+    }
+    
+    /**
+     * Parses an error response and creates a GutendexException.
+     *
+     * @param body The response body string
+     * @param httpCode The HTTP status code
+     * @param httpMessage The HTTP status message
+     * @return GutendexException with parsed error details
+     */
+    private fun parseErrorResponse(
+        body: String,
+        httpCode: Int,
+        httpMessage: String,
+    ): GutendexException {
+        var error: ErrorResponse
+        var parseException: SerializationException?
+        try {
+            error = json.decodeFromString<ErrorResponse>(body)
+            parseException = null
+        } catch (e: SerializationException) {
+            error = ErrorResponse("HTTP $httpCode: $httpMessage")
+            parseException = e
+        }
+        return GutendexException(error.detail, httpCode, parseException)
     }
 }
 

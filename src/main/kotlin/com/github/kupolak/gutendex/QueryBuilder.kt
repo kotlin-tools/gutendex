@@ -1,7 +1,6 @@
 package com.github.kupolak.gutendex
 
 import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 /**
  * A fluent builder for constructing query parameters for the Gutendex API.
@@ -117,6 +116,8 @@ internal object CopyrightHelper {
  * Helper class for building query URLs from parameters.
  */
 internal object QueryUrlBuilder {
+    private const val UTF_8 = "UTF-8"
+    
     fun buildUrl(
         baseUrl: String,
         params: Map<String, String>,
@@ -125,13 +126,16 @@ internal object QueryUrlBuilder {
             return baseUrl
         }
 
-        val queryString =
-            params.map { (key, value) ->
-                "${URLEncoder.encode(
-                    key,
-                    StandardCharsets.UTF_8.toString(),
-                )}=${URLEncoder.encode(value, StandardCharsets.UTF_8.toString())}"
-            }.joinToString("&")
+        val queryString = buildString {
+            var first = true
+            params.forEach { (key, value) ->
+                if (!first) append('&')
+                append(URLEncoder.encode(key, UTF_8))
+                append('=')
+                append(URLEncoder.encode(value, UTF_8))
+                first = false
+            }
+        }
 
         return "$baseUrl?$queryString"
     }
